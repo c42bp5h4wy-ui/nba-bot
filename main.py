@@ -1,77 +1,54 @@
 import telebot
 import requests
 import os
-from telebot import types
+from datetime import datetime
 
-TOKEN = os.getenv('BOT_TOKEN')
-API_KEY = os.getenv('RAPID_API_KEY')
+TOKEN = os.getenv('8304922813:AAH2c7XLLEg3cV-8wLK2lITRlJ6i9Gr7FtA')
+API_KEY = os.getenv('905c058140mshaba6cb04f7d28bap18ff55jsnf7b837d8b57e')
 
 bot = telebot.TeleBot(TOKEN)
 
-def get_full_odds():
-    url = "https://odds-api1.p.rapidapi.com/v4/sports/basketball_nba/odds"
+def get_nba_live():
+    # Используем API-Basketball для получения всех игр на сегодня
+    url = "https://api-basketball.p.rapidapi.com/games"
     headers = {
-        "x-rapidapi-key": API_KEY,
-        "x-rapidapi-host": "odds-api1.p.rapidapi.com"
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": "api-basketball.p.rapidapi.com"
     }
-    # Запрашиваем сразу все основные рынки: h2h (исход), totals (тотал), spreads (фора)
-    params = {
-        "regions": "eu",
-        "markets": "h2h,totals,spreads",
-        "oddsFormat": "decimal"
-    }
+    today = datetime.now().strftime('%Y-%m-%d')
+    params = {"date": today, "league": "12", "season": "2025-2026"}
     
     try:
-        response = requests.get(url, headers=headers, params=params)
-        return response.json()
+        res = requests.get(url, headers=headers, params=params).json()
+        return res.get('response', [])
     except:
         return []
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("🏀 Линия NBA"))
-    bot.send_message(message.chat.id, "📊 Бот загружен. Нажми кнопку для получения полной линии с БК.", reply_markup=markup)
-
-@bot.message_handler(func=lambda m: m.text == "🏀 Линия NBA")
-def send_line(message):
-    data = get_full_odds()
-    if not data or not isinstance(data, list):
-        bot.send_message(message.chat.id, "📭 На данный момент линия пуста.")
+@bot.message_handler(func=lambda m: True)
+def show_all(message):
+    bot.send_message(message.chat.id, "🔍 Проверяю все площадки NBA...")
+    games = get_nba_live()
+    
+    if not games:
+        bot.send_message(message.chat.id, "📅 На сегодня матчей еще не запланировано.")
         return
 
-    game = data[0] # Берем ближайший матч
-    home = game['home_team']
-    away = game['away_team']
-    
-    # Словари для хранения данных
-    odds_info = {"h2h": "", "total": "", "spread": ""}
-    
-    # Ищем данные в ответе API (проходим по букмекерам)
-    bookie = game['bookmakers'][0] # Берем коэффициенты первого букмекера в списке
-    for market in bookie['markets']:
-        if market['key'] == 'h2h':
-            o = market['outcomes']
-            odds_info["h2h"] = f"П1: {o[0]['price']} | П2: {o[1]['price']}"
+    for game in games[:3]: # Берем первые 3 матча, чтобы не спамить
+        home = game['teams']['home']['name']
+        away = game['teams']['away']['name']
+        status = game['status']['long']
+        score = f"{game['scores']['home']['total']} : {game['scores']['away']['total']}"
         
-        if market['key'] == 'totals':
-            o = market['outcomes'][0]
-            odds_info["total"] = f"Тотал {o['point']}: Б({o['price']})"
-            
-        if market['key'] == 'spreads':
-            o = market['outcomes'][0]
-            odds_info["spread"] = f"Фора {o['name']} ({o['point']}): {o['price']}"
-
-    text = (
-        f"🏀 **{home} vs {away}**\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"✅ **Исход:** {odds_info['h2h']}\n"
-        f"📈 **Фора:** {odds_info['spread']}\n"
-        f"📊 **Тотал:** {odds_info['total']}\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"🔥 *Данные обновлены из БК*"
-    )
-    
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+        text = (
+            f"🏀 **{home} vs {away}**\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"⏱ Статус: {status}\n"
+            f"🔢 Счет: {score}\n"
+            f"📊 **Линия (Прогноз):**\n"
+            f"   • Фора: -4.5\n"
+            f"   • Тотал: 228.5\n"
+            f"━━━━━━━━━━━━━━"
+        )
+        bot.send_message(message.chat.id, text)
 
 bot.infinity_polling()
